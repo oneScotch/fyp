@@ -203,8 +203,8 @@ def main():
             ## render single person mesh
             focal = [cfg.focal[0] / cfg.input_body_shape[1] * bbox[2], cfg.focal[1] / cfg.input_body_shape[0] * bbox[3]]
             princpt = [cfg.princpt[0] / cfg.input_body_shape[1] * bbox[2] + bbox[0], cfg.princpt[1] / cfg.input_body_shape[0] * bbox[3] + bbox[1]]
-            # vis_img = render_mesh(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, 
-            #                       mesh_as_vertices=args.show_verts)
+            vis_img = render_mesh(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, 
+                                  mesh_as_vertices=args.show_verts)
             if args.show_bbox:
                 vis_img = cv2.rectangle(vis_img, start_point, end_point, (255, 0, 0), 2)
 

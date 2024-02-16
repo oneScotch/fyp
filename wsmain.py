@@ -52,9 +52,9 @@ def call_inference(args):
                 files = glob.glob(os.path.join(frame_path, '*'))
                 for file in files:
                     os.remove(file)
-            os.system(f'ffmpeg -i {video_path} -f image2 '
-                    f'-vf fps={args.fps} -qscale 0 {frame_path}/%06d.jpg ' \
-                    f'-hide_banner  -loglevel error')
+            # os.system(f'ffmpeg -i {video_path} -f image2 '
+            #         f'-vf fps={args.fps} -qscale 0 {frame_path}/%06d.jpg ' \
+            #         f'-hide_banner  -loglevel error')
             assert len(os.listdir(frame_path)) == video_len
         # else:
         #     # copy frames from folder
@@ -79,124 +79,67 @@ def call_inference(args):
         # import pdb; pdb.set_trace()
 
         # prepare cmd for inference
-        cmd_smplerx_inference = f'cd smplerx/main && python inference.py ' \
+        cmd_smplerx_inference = f'cd main && python inference.py ' \
             f'--num_gpus 1 --pretrained_model {args.ckpt} ' \
             f'--agora_benchmark agora_model ' \
-            f'--img_path ../../{frame_path} --start {start_count} --end {end_count} ' \
-            f'--output_folder ../../{args.save_dir}/{vid_name} ' \
-            f'--show_verts --show_bbox ' \
+            f'--img_path ../{frame_path} --start {start_count} --end {end_count} ' \
+            f'--output_folder ../{args.save_dir}/{vid_name} ' \
+            f'--show_verts --show_bbox --save_mesh ' \
             f'--multi_person ' 
             # f'--use_manual_bbox ' \
             # f'--show_verts --show_bbox --save_mesh --multi_person'
         if args.clear_folder:
             # clear inference folder
-            files = glob.glob(f'../../{args.save_dir}/{vid_name}/meta/*')
+            files = glob.glob(f'../{args.save_dir}/{vid_name}/meta/*')
             for file in files:
                 os.remove(file)
-            files = glob.glob(f'../../{args.save_dir}/{vid_name}/smplx/*')
+            files = glob.glob(f'../{args.save_dir}/{vid_name}/smplx/*')
             for file in files:
                 os.remove(file)
-        os.system(cmd_smplerx_inference)
+        # os.system(cmd_smplerx_inference)
 
         # prepare cmd for rendering
-        cmd_visualize_overlay = f'cd smplerx/main && python render.py ' \
-            f'--data_path ../../{args.save_dir} --seq {vid_name} ' \
-            f'--image_path ../../{args.save_dir}/{vid_name} ' \
+        cmd_visualize_overlay = f'cd main && python render.py ' \
+            f'--data_path ../{args.save_dir} --seq {vid_name} ' \
+            f'--image_path ../{args.save_dir}/{vid_name} ' \
             f'--render_biggest_person False'
             # f'--load_mode propainter'
         if args.clear_folder:
             # clear overlay folder
-            files = glob.glob(f'../../{args.save_dir}/{vid_name}/smplerx_overlay_img/*')
+            files = glob.glob(f'../{args.save_dir}/{vid_name}/smplerx_overlay_img/*')
             for file in files:
                 os.remove(file)
-        # os.system(cmd_visualize_overlay)
+        os.system(cmd_visualize_overlay)
 
         # copy orig img if img not exist in smplx overlay
-        if os.path.exists(os.path.join(args.save_dir, vid_name, 'smplerx_smplx_overlay')):
-            for file in os.listdir(frame_path):
-                if not os.path.exists(os.path.join(args.save_dir, vid_name, 'smplerx_smplx_overlay', file)):
-                    shutil.copy(os.path.join(frame_path, file),
-                                os.path.join(args.save_dir, vid_name, 'smplerx_smplx_overlay', file))
+        # if os.path.exists(os.path.join(args.save_dir, vid_name, 'smplerx_smplx_overlay')):
+        #     for file in os.listdir(frame_path):
+        #         if not os.path.exists(os.path.join(args.save_dir, vid_name, 'smplerx_smplx_overlay', file)):
+        #             shutil.copy(os.path.join(frame_path, file),
+        #                         os.path.join(args.save_dir, vid_name, 'smplerx_smplx_overlay', file))
 
-        # concat overlay video with frame rate
-        cmd_concat_overlay_video = f'ffmpeg -r {args.fps} -i ' \
-            f'{args.save_dir}/{vid_name}/smplerx_smplx_overlay/%06d.jpg ' \
-            f'-vcodec libx264 -crf 25 -pix_fmt yuv420p -r {args.fps} ' \
-            f'{args.save_dir}/{vid_name}_smplerx.mp4 ' \
-            f'-hide_banner  -loglevel error -y'
+        # # concat overlay video with frame rate
+        # cmd_concat_overlay_video = f'ffmpeg -r {args.fps} -i ' \
+        #     f'{args.save_dir}/{vid_name}/smplerx_smplx_overlay/%06d.jpg ' \
+        #     f'-vcodec libx264 -crf 25 -pix_fmt yuv420p -r {args.fps} ' \
+        #     f'{args.save_dir}/{vid_name}_smplerx.mp4 ' \
+        #     f'-hide_banner  -loglevel error -y'
         # os.system(cmd_concat_overlay_video)
 
-        # prepare cmd for smplx post-processing
-        cmd_smplx_post_processing = f'cd smplx_post_process && python process_ws.py ' \
-            f'--save_root ../{os.path.join(args.save_dir, vid_name)} ' \
-            f'--width {width} --height {height} ' \
-            f'--pose_smooth ' \
-            f'--transl_smooth ' \
-            f'--save_original_format '
+        # # prepare cmd for smplx post-processing
+        # cmd_smplx_post_processing = f'python process_ws.py ' \
+        #     f'--save_root {os.path.join(args.save_dir, vid_name)} ' \
+        #     f'--width {width} --height {height} ' \
+        #     f'--n_cam 2 '
         # os.system(cmd_smplx_post_processing)
 
-        # avatar info dict
-        available_avatars = ['Y_Bot', 'Ch02_nonPBR', 
-                             'Ch15_nonPBR', 'Ch22_nonPBR', 'Ch33_nonPBR']
-        avatar_name = 'Y_Bot'
-        assert avatar_name in available_avatars
-        avatar_bmp = dict(Y_Bot='smplx_to_ybot.bmap', 
-                          Ch02_nonPBR='smplx_to_ybot.bmap', 
-                          Ch15_nonPBR='smplx_to_ybot.bmap', 
-                          Ch22_nonPBR='smplx_to_ch22.bmap', 
-                          Ch33_nonPBR='smplx_to_ch33.bmap')
-        avatar_configs = dict(Y_Bot='ybot.json', Ch02_nonPBR='ch02.json', 
-                              Ch15_nonPBR='ch15.json', Ch22_nonPBR='ch22.json',  
-                              Ch33_nonPBR='ch33.json')
-
-        # get smplx post-processing result
-        smplx_prs = glob.glob(f'{args.save_dir}/{vid_name}/processed_smplx/smoothed_data_smplx_*.npz')
-        if args.clear_folder:
-            # clear .blend files
-            files = glob.glob(f'{args.save_dir}/{vid_name}/*.blend')
-            for file in files:
-                os.remove(file)
-        for smplx_pr in smplx_prs:
-            idx = smplx_pr[-7:-4]
-            smplx_bn = os.path.basename(smplx_pr)
-            temp_bn = smplx_bn.replace(".npz", ".blend")
-            if os.path.exists(f'{args.save_dir}/{vid_name}/{temp_bn}'):
-                os.remove(f'{args.save_dir}/{vid_name}/{temp_bn}')
-            # prepare cmd for motion retargeting
-            cmd_mort_preprocess = f'blender-3.4.1-linux-x64/blender --background ' \
-                f'--python mort/npz2blend.py -- ' \
-                f'--npz_path {smplx_pr} ' \
-                f'--output_smplx_blend_path {args.save_dir}/{vid_name}/{temp_bn} ' \
-                f'--smplx_blender_addon mort/assets/blender_addon/smplx_blender_addon_20220623.zip '
-            # os.system(cmd_mort_preprocess)
-
-            for avatar_name in available_avatars:
-                if os.path.exists(f'{args.save_dir}/{vid_name}/{avatar_name}_{idx}.blend'):
-                    os.remove(f'{args.save_dir}/{vid_name}/{avatar_name}_{idx}.blend')
-                cmd_mort = f'blender-3.4.1-linux-x64/blender --background ' \
-                    f'--python mort/retarget.py -- ' \
-                    f'--motion_blend_path {args.save_dir}/{vid_name}/{temp_bn} ' \
-                    f'--bmap_file_path mort/assets/bmap/{avatar_bmp[avatar_name]} ' \
-                    f'--avatar_fbx_path mort/assets/fbx/{avatar_name}.fbx ' \
-                    f'--config_file_path mort/assets/config/{avatar_configs[avatar_name]} ' \
-                    f'--output_blend_path {args.save_dir}/{vid_name}/{avatar_name}_{idx}.blend '
-                # os.system(cmd_mort)
-
-        # prepare cmd for propainter
-        cmd_propainter = f'cd propainter && python inference_propainter.py ' \
-            f'--video ../{args.save_dir}/{vid_name}/orig_img/ ' \
-            f'--mask ../{args.save_dir}/{vid_name}/ma_mask ' \
-            f'--save_fps {args.fps} -o ../{args.save_dir}/{vid_name} ' \
-            f'--save_frames --height 360 --width 640'
-        # os.system(cmd_propainter)
-
-        # concat video with frame rate
-        cmd_concat_video = f'ffmpeg -r {args.fps} -i ' \
-            f'{args.save_dir}/{vid_name}/overlay_img/%05d.jpg ' \
-            f'-vcodec libx264 -crf 25 -pix_fmt yuv420p -r {args.fps} ' \
-            f'{args.save_dir}/{vid_name}_propainter.mp4 ' \
-            f'-hide_banner  -loglevel error'
-        # os.system(cmd_concat_video)
+        # # concat video with frame rate
+        # cmd_concat_video = f'ffmpeg -r {args.fps} -i ' \
+        #     f'{args.save_dir}/{vid_name}/overlay_img/%05d.jpg ' \
+        #     f'-vcodec libx264 -crf 25 -pix_fmt yuv420p -r {args.fps} ' \
+        #     f'{args.save_dir}/{vid_name}_propainter.mp4 ' \
+        #     f'-hide_banner  -loglevel error'
+        # # os.system(cmd_concat_video)
 
 if __name__ == "__main__":
 

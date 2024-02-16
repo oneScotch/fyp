@@ -70,6 +70,8 @@ def render_pose(img, body_model_param, body_model, camera, return_mask=False):
     scene.add(body_mesh, 'mesh')
 
     # render scene
+    # os.environ["PYOPENGL_PLATFORM"] = "egl"
+    os.environ["MUJOCO_GL"]="osmesa"
     os.environ["PYOPENGL_PLATFORM"] = "osmesa" # include this line if use in vscode
     r = pyrender.OffscreenRenderer(viewport_width=img.shape[1],
                                     viewport_height=img.shape[0],
