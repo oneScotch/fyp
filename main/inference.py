@@ -15,6 +15,7 @@ from tqdm import tqdm
 import json
 from typing import Literal, Union
 from mmdet.apis import init_detector, inference_detector
+from mmtrack.apis import init_model, inference_sot
 from utils.inference_utils import process_mmdet_results, non_max_suppression
 
 import pdb
@@ -38,6 +39,8 @@ def parse_args():
     parser.add_argument('--multi_person', action="store_true")
     parser.add_argument('--iou_thr', type=float, default=0.5)
     parser.add_argument('--bbox_thr', type=int, default=50)
+    parser.add_argument('--detection_method', type=str, default='mmtrack',
+                        choices=['mmdet', 'mmtrack'])
 
     parser.add_argument('--use_manual_bbox', action="store_true")
 
@@ -73,7 +76,12 @@ def main():
         ### mmdet init
         checkpoint_file = '../pretrained_models/mmdet/faster_rcnn_r50_fpn_1x_coco_20200130-047c8118.pth'
         config_file= '../pretrained_models/mmdet/mmdet_faster_rcnn_r50_fpn_coco.py'
-        model = init_detector(config_file, checkpoint_file, device='cuda:0')  # or device='cuda:0'
+        det_model = init_detector(config_file, checkpoint_file, device='cuda:0')  # or device='cuda:0'
+        ### mmtrack init
+        checkpoint_file = f'../pretrained_models/mmtrack/mixformer_cvt_500e_lasot.pth'
+        config_file= f'../pretrained_models/mmtrack/mixformer_cvt_500e_got10k.py'
+        track_model = init_model(config_file, checkpoint_file, device='cuda:0')  # or device='cuda:0'
+        track_started, tracked_frame = False, 0
     else:
         # check mask folder number
         mask_folders = [f for f in os.listdir(os.path.dirname(args.img_path))
@@ -123,47 +131,64 @@ def main():
                     # in xyxy format
                     mmdet_box.append([x_min, y_min, x_max, y_max, 1])
             num_bbox = len(mmdet_box)
+            det_bbox = mmdet_box
 
         else:
-            ## mmdet inference
-            mmdet_results = inference_detector(model, img_path)
-            mmdet_box = process_mmdet_results(mmdet_results, cat_id=0, multi_person=True)
+            if not track_started:
+                ## mmdet inference
+                mmdet_results = inference_detector(det_model, img_path)
+                det_bbox = process_mmdet_results(mmdet_results, cat_id=0, multi_person=True)
+                det_bbox = det_bbox[0]
+
+            if args.detection_method == 'mmtrack':
+
+                if len(det_bbox) >= 1 and not track_started:
+                    track_gt_bbox = det_bbox[0]
+                    track_started = True
+                if track_started:
+                    img = cv2.imread(img_path)
+                    # img = np.array([img, img])
+                    mmtrack_results = inference_sot(track_model, img, init_bbox=track_gt_bbox, frame_id=tracked_frame)
+                    tracked_frame += 1
+                    det_bbox = [mmtrack_results['track_bboxes'][:5]]
             
-            # save original image if no bbox
-            if len(mmdet_box[0])<1:
-                # save rendered image
-                frame_name = img_path.split('/')[-1]
-                save_path_img = os.path.join(args.output_folder, 'img')
-                os.makedirs(save_path_img, exist_ok= True)
-                cv2.imwrite(os.path.join(save_path_img, f'{frame_name}'), vis_img[:, :, ::-1])
-                continue
-            
+        # save original image if no bbox
+        if len(det_bbox)<1:
+            # save rendered image
+            frame_name = img_path.split('/')[-1]
+            save_path_img = os.path.join(args.output_folder, 'img')
+            os.makedirs(save_path_img, exist_ok= True)
+            cv2.imwrite(os.path.join(save_path_img, f'{frame_name}'), vis_img[:, :, ::-1])
+            continue
+
+        if not args.use_manual_bbox:
             if not multi_person:
                 # only select the largest bbox
                 num_bbox = 1
-                mmdet_box = mmdet_box[0]
             else:
                 # keep bbox by NMS with iou_thr
-                mmdet_box = non_max_suppression(mmdet_box[0], args.iou_thr)
-                num_bbox = len(mmdet_box)
+                # print(det_bbox)
+                det_bbox = non_max_suppression(det_bbox, args.iou_thr)
+                num_bbox = len(det_bbox)
         
         ## loop all detected bboxes
         for bbox_id in range(num_bbox):
-            mmdet_box_xywh = np.zeros((4))
-            mmdet_box_xywh[0] = mmdet_box[bbox_id][0]
-            mmdet_box_xywh[1] = mmdet_box[bbox_id][1]
-            mmdet_box_xywh[2] =  abs(mmdet_box[bbox_id][2]-mmdet_box[bbox_id][0])
-            mmdet_box_xywh[3] =  abs(mmdet_box[bbox_id][3]-mmdet_box[bbox_id][1]) 
+            bbox_xywh = np.zeros((4))
+            bbox_xywh[0] = det_bbox[bbox_id][0]
+            bbox_xywh[1] = det_bbox[bbox_id][1]
+            bbox_xywh[2] =  abs(det_bbox[bbox_id][2]-det_bbox[bbox_id][0])
+            bbox_xywh[3] =  abs(det_bbox[bbox_id][3]-det_bbox[bbox_id][1]) 
+            # print(bbox_id, bbox_xywh)
 
             # skip small bboxes by bbox_thr in pixel
-            if mmdet_box_xywh[2] < args.bbox_thr or mmdet_box_xywh[3] < args.bbox_thr * 3:
+            if bbox_xywh[2] < args.bbox_thr or bbox_xywh[3] < args.bbox_thr * 3:
                 continue
 
             # for bbox visualization 
-            start_point = (int(mmdet_box[bbox_id][0]), int(mmdet_box[bbox_id][1]))
-            end_point = (int(mmdet_box[bbox_id][2]), int(mmdet_box[bbox_id][3]))   
+            start_point = (int(det_bbox[bbox_id][0]), int(det_bbox[bbox_id][1]))
+            end_point = (int(det_bbox[bbox_id][2]), int(det_bbox[bbox_id][3]))   
 
-            bbox = process_bbox(mmdet_box_xywh, original_img_width, original_img_height)
+            bbox = process_bbox(bbox_xywh, original_img_width, original_img_height)
             img, img2bb_trans, bb2img_trans = generate_patch_image(original_img, bbox, 1.0, 0.0, False, cfg.input_img_shape)
             img = transform(img.astype(np.float32))/255
             img = img.cuda()[None,:,:,:]
@@ -203,16 +228,19 @@ def main():
             ## render single person mesh
             focal = [cfg.focal[0] / cfg.input_body_shape[1] * bbox[2], cfg.focal[1] / cfg.input_body_shape[0] * bbox[3]]
             princpt = [cfg.princpt[0] / cfg.input_body_shape[1] * bbox[2] + bbox[0], cfg.princpt[1] / cfg.input_body_shape[0] * bbox[3] + bbox[1]]
-            vis_img = render_mesh(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, 
-                                  mesh_as_vertices=args.show_verts)
+            # vis_img = render_mesh(vis_img, mesh, smpl_x.face, {'focal': focal, 'princpt': princpt}, 
+            #                       mesh_as_vertices=args.show_verts)
+            
             if args.show_bbox:
+            # if True:
+                # print(start_point, end_point)
                 vis_img = cv2.rectangle(vis_img, start_point, end_point, (255, 0, 0), 2)
 
             ## save single person meta
             meta = {'focal': focal, 
                     'princpt': princpt, 
                     'bbox': bbox.tolist(), 
-                    'bbox_mmdet': mmdet_box_xywh.tolist(), 
+                    'bbox_mmdet': bbox_xywh.tolist(), 
                     'bbox_id': bbox_id,
                     'img_path': img_path}
             json_object = json.dumps(meta, indent=4)
@@ -222,7 +250,7 @@ def main():
             with open(os.path.join(save_path_meta, f'{frame:05}_{bbox_id}.json'), "w") as outfile:
                 outfile.write(json_object)
 
-        ## save rendered image with all person
+        # save rendered image with all person
         frame_name = img_path.split('/')[-1]
         save_path_img = os.path.join(args.output_folder, 'img')
         os.makedirs(save_path_img, exist_ok= True)
