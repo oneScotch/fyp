@@ -1,5 +1,5 @@
 import numpy as np
-
+import torch
 def get_smplx_joint_names():
     return [
         'pelvis',
@@ -173,4 +173,4 @@ def get_hands_mean():
 
 def get_reference_rotations():
     reference_rotation = torch.tensor([1, 0, 0, 0])
-    return reference_rotation.expand(55,4)
+    return reference_rotation.expand(54,4)

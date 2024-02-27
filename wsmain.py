@@ -12,21 +12,10 @@ import mmcv
 def call_inference(args):
 
     # parse videos
-    if args.vid == 'all':
-        video_list = [vn for vn in os.listdir(args.img_path)
-                    if vn.endswith(args.format)]
-    elif args.vid == 'zhege':
-        video_list = glob.glob(os.path.join(args.save_dir, '*', 'input.mp4'))
-        for vid in video_list:
-            vid_name = vid.split('/')[-2]
-            shutil.copy(vid, os.path.join(args.img_path, vid.split('/')[-2] + '.mp4'))
-        video_list = [vn for vn in os.listdir(args.img_path)
-                    if vn.endswith(args.format)]
-    else:
-        video_list = [f'{args.vid}.{args.format}']
-
+    video_list = [vn for vn in os.listdir(args.img_path)
+                if vn.endswith(args.format)]
     # loop over videos
-    for vid in video_list:
+    for i, vid in enumerate(video_list):
         print('processing', vid)
 
         vid_name = vid.split('.')[0]
@@ -40,9 +29,11 @@ def call_inference(args):
         video_len = int(video.get(7))
         if args.fps != fps:
             args.fps = fps
-        print('fps', fps)
-
-        frame_path = os.path.join(args.save_dir, vid_name, 'orig_img')
+        print('fps', args.fps)
+        vid_folder_name = args.img_path.split("/")[-1]
+        save_path = os.path.join(args.save_dir, vid_folder_name, str(i))
+        print(save_path)
+        frame_path = os.path.join(save_path, 'orig_img')
         os.makedirs(frame_path, exist_ok=True)
         if args.format not in ['jpg', 'png', 'jpeg']:
             # extract frames from video
@@ -52,9 +43,10 @@ def call_inference(args):
                 files = glob.glob(os.path.join(frame_path, '*'))
                 for file in files:
                     os.remove(file)
-            # os.system(f'ffmpeg -i {video_path} -f image2 '
-            #         f'-vf fps={args.fps} -qscale 0 {frame_path}/%06d.jpg ' \
-            #         f'-hide_banner  -loglevel error')
+            cmd_video_frames = f'ffmpeg -i {video_path} -f image2 ' \
+                    f'-vf fps={args.fps} -qscale 0 {frame_path}/%06d.jpg ' \
+                    f'-hide_banner  -loglevel error'
+            os.system(cmd_video_frames)
             assert len(os.listdir(frame_path)) == video_len
         # else:
         #     # copy frames from folder
@@ -83,33 +75,33 @@ def call_inference(args):
             f'--num_gpus 1 --pretrained_model {args.ckpt} ' \
             f'--agora_benchmark agora_model ' \
             f'--img_path ../{frame_path} --start {start_count} --end {end_count} ' \
-            f'--output_folder ../{args.save_dir}/{vid_name} ' \
+            f'--output_folder ../{save_path} ' \
             f'--show_verts --show_bbox --save_mesh ' \
-            f'--multi_person ' 
+            f'--multi_person --iou_thr 0.2 ' \
             # f'--use_manual_bbox ' \
             # f'--show_verts --show_bbox --save_mesh --multi_person'
         if args.clear_folder:
             # clear inference folder
-            files = glob.glob(f'../{args.save_dir}/{vid_name}/meta/*')
+            files = glob.glob(f'../{save_path}/meta/*')
             for file in files:
                 os.remove(file)
-            files = glob.glob(f'../{args.save_dir}/{vid_name}/smplx/*')
+            files = glob.glob(f'../{save_path}/smplx/*')
             for file in files:
                 os.remove(file)
         # os.system(cmd_smplerx_inference)
 
         # prepare cmd for rendering
         cmd_visualize_overlay = f'cd main && python render.py ' \
-            f'--data_path ../{args.save_dir} --seq {vid_name} ' \
-            f'--image_path ../{args.save_dir}/{vid_name} ' \
+            f'--data_path ../{save_path} --seq "" ' \
+            f'--image_path ../{save_path} ' \
             f'--render_biggest_person False'
             # f'--load_mode propainter'
         if args.clear_folder:
             # clear overlay folder
-            files = glob.glob(f'../{args.save_dir}/{vid_name}/smplerx_overlay_img/*')
+            files = glob.glob(f'../{save_path}/smplerx_overlay_img/*')
             for file in files:
                 os.remove(file)
-        os.system(cmd_visualize_overlay)
+        # os.system(cmd_visualize_overlay)
 
         # copy orig img if img not exist in smplx overlay
         # if os.path.exists(os.path.join(args.save_dir, vid_name, 'smplerx_smplx_overlay')):
@@ -126,30 +118,29 @@ def call_inference(args):
         #     f'-hide_banner  -loglevel error -y'
         # os.system(cmd_concat_overlay_video)
 
-        # # prepare cmd for smplx post-processing
-        # cmd_smplx_post_processing = f'python process_ws.py ' \
-        #     f'--save_root {os.path.join(args.save_dir, vid_name)} ' \
-        #     f'--width {width} --height {height} ' \
-        #     f'--n_cam 2 '
-        # os.system(cmd_smplx_post_processing)
+        # prepare cmd for smplx post-processing
 
-        # # concat video with frame rate
-        # cmd_concat_video = f'ffmpeg -r {args.fps} -i ' \
-        #     f'{args.save_dir}/{vid_name}/overlay_img/%05d.jpg ' \
-        #     f'-vcodec libx264 -crf 25 -pix_fmt yuv420p -r {args.fps} ' \
-        #     f'{args.save_dir}/{vid_name}_propainter.mp4 ' \
-        #     f'-hide_banner  -loglevel error'
-        # # os.system(cmd_concat_video)
+    n_cam = len(video_list) 
+    cmd_smplx_post_processing = f'python process_ws.py ' \
+        f'--save_root {os.path.join(args.save_dir, vid_folder_name)} ' \
+        f'--n_cam {n_cam} '
+    # os.system(cmd_smplx_post_processing)
+
+    # concat video with frame rate
+    cmd_concat_video = f'ffmpeg -r {args.fps} -i ' \
+        f'{args.save_dir}/{vid_name}/overlay_img/%05d.jpg ' \
+        f'-vcodec libx264 -crf 25 -pix_fmt yuv420p -r {args.fps} ' \
+        f'{args.save_dir}/{vid_name}_propainter.mp4 ' \
+        f'-hide_banner  -loglevel error'
+    # os.system(cmd_concat_video)
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--vid', type=str,
-                        default='all')
     parser.add_argument('--format', type=str,
                         default='mp4')
     parser.add_argument('--fps', type=int,
-                        default=0)
+                        default=30)
     parser.add_argument('--ckpt', type=str,
                         default='smpler_x_h32')
     parser.add_argument('--img_path', type=str,
